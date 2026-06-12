@@ -1,101 +1,38 @@
-import { Link, useLocation } from 'react-router-dom'
-import { useAuth } from '../hooks/useAuth'
-import { AuthProvider } from '../hooks/useAuth'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import Login from './pages/Login'
+import Dashboard from './pages/Dashboard'
+import Activities from './pages/Activities'
+import Stats from './pages/Stats'
+import Layout from './components/Layout'
 
-function LayoutInner({ children }) {
-  const { user } = useAuth()
-  const location = useLocation()
+function PrivateRoute({ children }) {
+  const [auth, setAuth] = useState(null)
 
-  const nav = [
-    { path: '/dashboard', icon: '◈', label: 'Tableau de bord' },
-    { path: '/activities', icon: '◉', label: 'Activités' },
-    { path: '/stats', icon: '◎', label: 'Statistiques' },
-  ]
+  useEffect(() => {
+    fetch('/.netlify/functions/me')
+      .then(r => r.json())
+      .then(d => setAuth(d.authenticated))
+      .catch(() => setAuth(false))
+  }, [])
 
-  return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      {/* Sidebar */}
-      <aside style={{
-        width: 220,
-        background: 'var(--bg2)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '24px 0',
-        position: 'fixed',
-        top: 0, left: 0, bottom: 0,
-        zIndex: 10
-      }}>
-        {/* Logo */}
-        <div style={{ padding: '0 20px 28px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 32, height: 32, background: 'var(--orange)',
-              borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 16
-            }}>⚡</div>
-            <div>
-              <div style={{ fontFamily: 'Space Grotesk', fontWeight: 700, fontSize: 14, lineHeight: 1.2 }}>Mon activité</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>sportive</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <nav style={{ flex: 1, padding: '16px 12px' }}>
-          {nav.map(({ path, icon, label }) => (
-            <Link key={path} to={path} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '10px 12px', borderRadius: 8, marginBottom: 2,
-              fontSize: 14, fontWeight: 500,
-              background: location.pathname === path ? 'var(--orange-dim)' : 'transparent',
-              color: location.pathname === path ? 'var(--orange2)' : 'var(--text2)',
-              transition: 'all 0.15s',
-              textDecoration: 'none'
-            }}>
-              <span style={{ fontSize: 16 }}>{icon}</span>
-              {label}
-            </Link>
-          ))}
-        </nav>
-
-        {/* User */}
-        {user && (
-          <div style={{ padding: '16px 12px', borderTop: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              {user.picture && (
-                <img src={user.picture} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-              )}
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{user.name?.split(' ')[0]}</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)' }}>{user.email}</div>
-              </div>
-            </div>
-            <a href="/.netlify/functions/logout" style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 12px', borderRadius: 8, fontSize: 13,
-              color: 'var(--text3)', background: 'transparent',
-              border: '1px solid var(--border)', cursor: 'pointer',
-              textDecoration: 'none', transition: 'all 0.15s'
-            }}>
-              ↩ Déconnexion
-            </a>
-          </div>
-        )}
-      </aside>
-
-      {/* Main */}
-      <main style={{ flex: 1, marginLeft: 220, padding: '32px', minHeight: '100vh' }}>
-        {children}
-      </main>
+  if (auth === null) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#8b92a8', background: '#0f1117' }}>
+      Chargement…
     </div>
   )
+  return auth ? children : <Navigate to="/" replace />
 }
 
-export default function Layout({ children }) {
+export default function App() {
   return (
-    <AuthProvider>
-      <LayoutInner>{children}</LayoutInner>
-    </AuthProvider>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/dashboard" element={<PrivateRoute><Layout><Dashboard /></Layout></PrivateRoute>} />
+        <Route path="/activities" element={<PrivateRoute><Layout><Activities /></Layout></PrivateRoute>} />
+        <Route path="/stats" element={<PrivateRoute><Layout><Stats /></Layout></PrivateRoute>} />
+      </Routes>
+    </BrowserRouter>
   )
 }
