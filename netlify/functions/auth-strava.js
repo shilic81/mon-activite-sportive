@@ -1,23 +1,31 @@
-import { jwtVerify, SignJWT } from 'jose'
+function parseJWT(token) {
+  try {
+    const [, body] = token.split('.')
+    return JSON.parse(Buffer.from(body, 'base64').toString())
+  } catch { return {} }
+}
+
+async function createJWT(payload) {
+  const secret = process.env.JWT_SECRET || 'dev-secret'
+  const base64url = (str) => Buffer.from(str).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+  const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+  const body = base64url(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30 }))
+  const crypto = await import('crypto')
+  const sig = crypto.default.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+  return `${header}.${body}.${sig}`
+}
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret')
 const SITE_URL = process.env.SITE_URL || 'http://localhost:8888'
 const REDIRECT_URI = `${SITE_URL}/.netlify/functions/auth-strava`
-
-// Helper : lire le cookie session
-const getSessionFromCookie = (cookieHeader) => {
-  if (!cookieHeader) return null
-  const match = cookieHeader.match(/session=([^;]+)/)
-  return match ? match[1] : null
-}
 
 export const handler = async (event) => {
   const { code, error, action } = event.queryStringParameters || {}
   const cookieHeader = event.headers.cookie || ''
 
-  // Action : initier la connexion Strava
   if (action === 'connect') {
     const params = new URLSearchParams({
       client_id: STRAVA_CLIENT_ID,
@@ -32,16 +40,10 @@ export const handler = async (event) => {
     }
   }
 
-  if (error) {
-    return { statusCode: 302, headers: { Location: `${SITE_URL}/dashboard?error=strava_denied` } }
-  }
-
-  if (!code) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Missing code' }) }
-  }
+  if (error) return { statusCode: 302, headers: { Location: `${SITE_URL}/dashboard?error=strava_denied` } }
+  if (!code) return { statusCode: 400, body: JSON.stringify({ error: 'Missing code' }) }
 
   try {
-    // Échanger le code contre les tokens Strava
     const tokenRes = await fetch('https://www.strava.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -55,19 +57,11 @@ export const handler = async (event) => {
     const stravaData = await tokenRes.json()
     if (!stravaData.access_token) throw new Error('No Strava access token')
 
-    // Récupérer la session Google existante si présente
-    const sessionToken = getSessionFromCookie(cookieHeader)
-    let sessionPayload = {}
-    if (sessionToken) {
-      try {
-        const { payload } = await jwtVerify(sessionToken, JWT_SECRET)
-        sessionPayload = payload
-      } catch (_) {}
-    }
+    const match = cookieHeader.match(/session=([^;]+)/)
+    const existingPayload = match ? parseJWT(match[1]) : {}
 
-    // Créer un nouveau JWT enrichi avec les tokens Strava
-    const jwt = await new SignJWT({
-      ...sessionPayload,
+    const jwt = await createJWT({
+      ...existingPayload,
       strava_access_token: stravaData.access_token,
       strava_refresh_token: stravaData.refresh_token,
       strava_expires_at: stravaData.expires_at,
@@ -75,9 +69,6 @@ export const handler = async (event) => {
       strava_athlete_name: `${stravaData.athlete?.firstname} ${stravaData.athlete?.lastname}`,
       strava_athlete_photo: stravaData.athlete?.profile
     })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setExpirationTime('30d')
-      .sign(JWT_SECRET)
 
     return {
       statusCode: 302,
