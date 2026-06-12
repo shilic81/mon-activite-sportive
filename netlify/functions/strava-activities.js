@@ -1,96 +1,72 @@
-import { jwtVerify, SignJWT } from 'jose'
+function parseJWT(token) {
+  try {
+    const [, body] = token.split('.')
+    return JSON.parse(Buffer.from(body, 'base64').toString())
+  } catch { return null }
+}
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret')
+async function createJWT(payload) {
+  const secret = process.env.JWT_SECRET || 'dev-secret'
+  const base64url = (str) => Buffer.from(str).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+  const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+  const body = base64url(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30 }))
+  const crypto = await import('crypto')
+  const sig = crypto.default.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+  return `${header}.${body}.${sig}`
+}
+
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET
-const SITE_URL = process.env.SITE_URL || 'http://localhost:8888'
-
-const refreshStravaToken = async (refreshToken) => {
-  const res = await fetch('https://www.strava.com/oauth/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: STRAVA_CLIENT_ID,
-      client_secret: STRAVA_CLIENT_SECRET,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token'
-    })
-  })
-  return res.json()
-}
 
 export const handler = async (event) => {
   const cookieHeader = event.headers.cookie || ''
   const match = cookieHeader.match(/session=([^;]+)/)
-  const token = match ? match[1] : null
+  if (!match) return { statusCode: 401, body: JSON.stringify({ error: 'Non authentifié' }) }
 
-  if (!token) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Non authentifié' }) }
-  }
-
-  let payload
-  try {
-    const verified = await jwtVerify(token, JWT_SECRET)
-    payload = verified.payload
-  } catch (_) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Session invalide' }) }
-  }
-
-  if (!payload.strava_access_token) {
-    return { statusCode: 403, body: JSON.stringify({ error: 'Strava non connecté' }) }
-  }
+  const payload = parseJWT(match[1])
+  if (!payload?.strava_access_token) return { statusCode: 403, body: JSON.stringify({ error: 'Strava non connecté' }) }
 
   let accessToken = payload.strava_access_token
   let newCookie = null
 
-  // Rafraîchir le token si expiré
   if (Date.now() / 1000 > payload.strava_expires_at - 300) {
     try {
-      const refreshed = await refreshStravaToken(payload.strava_refresh_token)
+      const r = await fetch('https://www.strava.com/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: STRAVA_CLIENT_ID,
+          client_secret: STRAVA_CLIENT_SECRET,
+          refresh_token: payload.strava_refresh_token,
+          grant_type: 'refresh_token'
+        })
+      })
+      const refreshed = await r.json()
       accessToken = refreshed.access_token
-
-      const newJwt = await new SignJWT({
+      const newJwt = await createJWT({
         ...payload,
         strava_access_token: refreshed.access_token,
         strava_refresh_token: refreshed.refresh_token,
         strava_expires_at: refreshed.expires_at
       })
-        .setProtectedHeader({ alg: 'HS256' })
-        .setExpirationTime('30d')
-        .sign(JWT_SECRET)
-
       newCookie = `session=${newJwt}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`
-    } catch (err) {
-      console.error('Token refresh failed:', err)
-    }
+    } catch (e) { console.error('Refresh failed', e) }
   }
 
-  // Paramètres de la requête
   const params = event.queryStringParameters || {}
   const page = params.page || 1
   const perPage = params.per_page || 50
-  const before = params.before || ''
-  const after = params.after || ''
-
   let url = `https://www.strava.com/api/v3/athlete/activities?page=${page}&per_page=${perPage}`
-  if (before) url += `&before=${before}`
-  if (after) url += `&after=${after}`
+  if (params.before) url += `&before=${params.before}`
+  if (params.after) url += `&after=${params.after}`
 
-  try {
-    const activitiesRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    })
-    const activities = await activitiesRes.json()
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+  const activities = await res.json()
 
-    const headers = { 'Content-Type': 'application/json' }
-    if (newCookie) headers['Set-Cookie'] = newCookie
+  const headers = { 'Content-Type': 'application/json' }
+  if (newCookie) headers['Set-Cookie'] = newCookie
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify(activities)
-    }
-  } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'Erreur Strava API' }) }
-  }
+  return { statusCode: 200, headers, body: JSON.stringify(activities) }
 }
