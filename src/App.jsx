@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useAuth } from './hooks/useAuth'
+import { useState, useEffect } from 'react'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Activities from './pages/Activities'
@@ -7,9 +7,21 @@ import Stats from './pages/Stats'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }) {
-  const { user, loading } = useAuth()
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text2)' }}>Chargement…</div>
-  return user ? children : <Navigate to="/" replace />
+  const [auth, setAuth] = useState(null)
+
+  useEffect(() => {
+    fetch('/.netlify/functions/me')
+      .then(r => r.json())
+      .then(d => setAuth(d.authenticated))
+      .catch(() => setAuth(false))
+  }, [])
+
+  if (auth === null) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#8b92a8', background: '#0f1117' }}>
+      Chargement…
+    </div>
+  )
+  return auth ? children : <Navigate to="/" replace />
 }
 
 export default function App() {
