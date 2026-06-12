@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Activities from './pages/Activities'
 import Stats from './pages/Stats'
+import Performances from './pages/Performances'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }) {
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/dashboard" element={<PrivateRoute><Layout><Dashboard /></Layout></PrivateRoute>} />
         <Route path="/activities" element={<PrivateRoute><Layout><Activities /></Layout></PrivateRoute>} />
         <Route path="/stats" element={<PrivateRoute><Layout><Stats /></Layout></PrivateRoute>} />
+        <Route path="/performances" element={<PrivateRoute><Layout><Performances /></Layout></PrivateRoute>} />
       </Routes>
     </BrowserRouter>
   )
