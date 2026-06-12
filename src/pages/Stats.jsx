@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
-import { format, parseISO, getYear, getMonth } from 'date-fns'
-import { fr } from 'date-fns/locale'
+import { parseISO, getYear, getMonth } from 'date-fns'
 import { getSportConfig, formatDistance, formatDuration } from '../utils/sports'
 
 const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
@@ -9,33 +8,60 @@ const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep',
 export default function Stats() {
   const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
-  const [year, setYear] = useState(new Date().getFullYear())
+  const [selectedYears, setSelectedYears] = useState([])
+  const [allYearsMode, setAllYearsMode] = useState(false)
 
   useEffect(() => {
     fetch('/.netlify/functions/strava-sync')
       .then(r => r.json())
-      .then(data => { if (data.activities) setActivities(data.activities) })
+      .then(data => {
+        if (data.activities) {
+          setActivities(data.activities)
+          const years = [...new Set(data.activities.map(a => getYear(parseISO(a.start_date))))].sort((a, b) => b - a)
+          setSelectedYears([years[0]])
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  const years = [...new Set(activities.map(a => getYear(parseISO(a.start_date))))].sort((a, b) => b - a)
-  const yearActs = activities.filter(a => getYear(parseISO(a.start_date)) === year)
+  const allYears = [...new Set(activities.map(a => getYear(parseISO(a.start_date))))].sort((a, b) => b - a)
 
-  // Par mois
+  const toggleYear = (y) => {
+    if (allYearsMode) {
+      setAllYearsMode(false)
+      setSelectedYears([y])
+      return
+    }
+    setSelectedYears(prev =>
+      prev.includes(y)
+        ? prev.length > 1 ? prev.filter(x => x !== y) : prev
+        : [...prev, y].sort((a, b) => b - a)
+    )
+  }
+
+  const toggleAll = () => {
+    setAllYearsMode(true)
+    setSelectedYears(allYears)
+  }
+
+  const filteredActs = allYearsMode
+    ? activities
+    : activities.filter(a => selectedYears.includes(getYear(parseISO(a.start_date))))
+
+  // Par mois (agrégé sur les années sélectionnées)
   const byMonth = MONTHS.map((m, i) => {
-    const acts = yearActs.filter(a => getMonth(parseISO(a.start_date)) === i)
+    const acts = filteredActs.filter(a => getMonth(parseISO(a.start_date)) === i)
     return {
       month: m,
       activités: acts.length,
       km: Math.round(acts.reduce((s, a) => s + (a.distance || 0), 0) / 1000),
-      h: Math.round(acts.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600 * 10) / 10
     }
   })
 
   // Par sport
   const bySport = {}
-  for (const a of yearActs) {
+  for (const a of filteredActs) {
     const type = a.sport_type || a.type || 'Other'
     if (!bySport[type]) bySport[type] = { count: 0, distance: 0, time: 0, elevation: 0 }
     bySport[type].count++
@@ -47,26 +73,45 @@ export default function Stats() {
     .map(([type, data]) => ({ type, ...data, config: getSportConfig(type) }))
     .sort((a, b) => b.count - a.count)
 
-  const pieData = sportData.slice(0, 6).map(s => ({
+  const pieData = sportData.slice(0, 7).map(s => ({
     name: s.config.label,
     value: s.count,
     color: s.config.color
   }))
 
+  const labelPeriod = allYearsMode
+    ? 'Toutes les années'
+    : selectedYears.length === 1
+      ? `${selectedYears[0]}`
+      : `${selectedYears.slice(-1)[0]}–${selectedYears[0]}`
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>Statistiques</h1>
-          <p style={{ color: 'var(--text2)', fontSize: 14 }}>{yearActs.length} activités en {year}</p>
+          <p style={{ color: 'var(--text2)', fontSize: 14 }}>
+            {filteredActs.length} activités · {labelPeriod}
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {years.map(y => (
-            <button key={y} onClick={() => setYear(y)} style={{
-              padding: '8px 16px', borderRadius: 8, fontSize: 14, fontWeight: 500,
-              background: y === year ? 'var(--orange)' : 'var(--bg2)',
-              border: `1px solid ${y === year ? 'var(--orange)' : 'var(--border)'}`,
-              color: y === year ? 'white' : 'var(--text2)',
+
+        {/* Sélecteur années */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 420 }}>
+          <button
+            onClick={toggleAll}
+            style={{
+              padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: allYearsMode ? 'var(--green)' : 'var(--bg2)',
+              border: `1px solid ${allYearsMode ? 'var(--green)' : 'var(--border)'}`,
+              color: allYearsMode ? '#0f1117' : 'var(--text2)',
+              cursor: 'pointer'
+            }}>TOUT</button>
+          {allYears.map(y => (
+            <button key={y} onClick={() => toggleYear(y)} style={{
+              padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+              background: !allYearsMode && selectedYears.includes(y) ? 'var(--orange)' : 'var(--bg2)',
+              border: `1px solid ${!allYearsMode && selectedYears.includes(y) ? 'var(--orange)' : 'var(--border)'}`,
+              color: !allYearsMode && selectedYears.includes(y) ? 'white' : 'var(--text2)',
               cursor: 'pointer'
             }}>{y}</button>
           ))}
@@ -79,18 +124,16 @@ export default function Stats() {
         </div>
       ) : (
         <>
-          {/* KPIs annuels */}
+          {/* KPIs */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
             {[
-              { label: 'Activités', value: yearActs.length, icon: '⚡' },
-              { label: 'Km parcourus', value: `${Math.round(yearActs.reduce((s, a) => s + (a.distance || 0), 0) / 1000)} km`, icon: '📍' },
-              { label: 'Heures', value: `${Math.round(yearActs.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600)}h`, icon: '⏱' },
-              { label: 'Dénivelé', value: `${Math.round(yearActs.reduce((s, a) => s + (a.total_elevation_gain || 0), 0))} m`, icon: '⛰' },
+              { label: 'Activités', value: filteredActs.length, icon: '⚡' },
+              { label: 'Km parcourus', value: `${Math.round(filteredActs.reduce((s, a) => s + (a.distance || 0), 0) / 1000)} km`, icon: '📍' },
+              { label: 'Heures', value: `${Math.round(filteredActs.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600)}h`, icon: '⏱' },
+              { label: 'Dénivelé', value: `${Math.round(filteredActs.reduce((s, a) => s + (a.total_elevation_gain || 0), 0))} m`, icon: '⛰' },
             ].map(({ label, value, icon }) => (
               <div key={label} className="card" style={{ padding: 20 }}>
-                <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {icon} {label}
-                </div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{icon} {label}</div>
                 <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'Space Grotesk' }}>{value}</div>
               </div>
             ))}
@@ -99,9 +142,11 @@ export default function Stats() {
           {/* Charts */}
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 28 }}>
             <div className="card">
-              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20, color: 'var(--text2)' }}>Activités par mois</h3>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20, color: 'var(--text2)' }}>
+                Activités & km par mois {allYearsMode ? '(toutes années)' : selectedYears.length > 1 ? '(années cumulées)' : ''}
+              </h3>
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={byMonth} barSize={20}>
+                <BarChart data={byMonth} barSize={16}>
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text3)' }} axisLine={false} tickLine={false} />
                   <YAxis hide />
                   <Tooltip contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} itemStyle={{ color: 'var(--text)' }} labelStyle={{ color: 'var(--text2)' }} />
@@ -129,12 +174,7 @@ export default function Stats() {
             <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 20, color: 'var(--text2)' }}>Détail par sport</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
               {sportData.map(({ type, count, distance, time, elevation, config }) => (
-                <div key={type} style={{
-                  padding: '16px',
-                  background: 'var(--bg3)',
-                  borderRadius: 10,
-                  border: '1px solid var(--border)'
-                }}>
+                <div key={type} style={{ padding: 16, background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                     <span style={{ fontSize: 22 }}>{config.icon}</span>
                     <div>
