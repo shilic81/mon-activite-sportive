@@ -77,16 +77,16 @@ export const handler = async (event) => {
             let medalType = 'bronze'
             let label = 'Top 10%'
 
-            if (achievement.type_id === 2) { medalType = 'kom'; label = 'KOM / QOM' }
+                        if (achievement.type_id === 5) { medalType = 'kom'; label = 'KOM / QOM' }
             else if (achievement.type_id === 3) { medalType = 'gold'; label = 'PR' }
-            else if (achievement.type_id === 5) { medalType = 'silver'; label = 'Top 10' }
+            else if (achievement.type_id === 2) { medalType = 'silver'; label = 'Top 10' }
+            else if (achievement.type_id === 1) { medalType = 'bronze'; label = 'Top 10%' }
             else if (achievement.rank) {
               if (achievement.rank === 1) { medalType = 'kom'; label = 'KOM / QOM' }
               else if (achievement.rank <= 3) { medalType = 'gold'; label = `#${achievement.rank}` }
               else if (achievement.rank <= 10) { medalType = 'silver'; label = `#${achievement.rank}` }
               else { medalType = 'bronze'; label = `#${achievement.rank}` }
             }
-
             medals.push({
               segmentId: effort.segment?.id,
               segmentName: effort.segment?.name || 'Segment inconnu',
