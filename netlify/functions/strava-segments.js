@@ -71,38 +71,36 @@ export const handler = async (event) => {
         if (!detail.segment_efforts) continue
 
         for (const effort of detail.segment_efforts) {
-          if (!effort.achievements || effort.achievements.length === 0) continue
+          // Utiliser pr_rank pour les médailles personnelles
+          const prRank = effort.pr_rank
+          const isKom = effort.achievements?.some(a => a.type_id === 5)
 
-          for (const achievement of effort.achievements) {
-            let medalType = 'bronze'
-            let label = 'Top 10%'
+          if (!prRank && !isKom) continue
 
-                        if (achievement.type_id === 5) { medalType = 'kom'; label = 'KOM / QOM' }
-            else if (achievement.type_id === 3) { medalType = 'gold'; label = 'PR' }
-            else if (achievement.type_id === 2) { medalType = 'silver'; label = 'Top 10' }
-            else if (achievement.type_id === 1) { medalType = 'bronze'; label = 'Top 10%' }
-            else if (achievement.rank) {
-              if (achievement.rank === 1) { medalType = 'kom'; label = 'KOM / QOM' }
-              else if (achievement.rank <= 3) { medalType = 'gold'; label = `#${achievement.rank}` }
-              else if (achievement.rank <= 10) { medalType = 'silver'; label = `#${achievement.rank}` }
-              else { medalType = 'bronze'; label = `#${achievement.rank}` }
-            }
-            medals.push({
-              segmentId: effort.segment?.id,
-              segmentName: effort.segment?.name || 'Segment inconnu',
-              activityId: act.id,
-              activityName: act.name,
-              activityType: act.sport_type || act.type || 'Other',
-              date: effort.start_date || act.start_date,
-              year: new Date(act.start_date).getFullYear(),
-              medal: medalType,
-              label,
-              rank: achievement.rank || null,
-              effortTime: effort.elapsed_time,
-              distance: effort.distance,
-              stravaUrl: `https://www.strava.com/activities/${act.id}`
-            })
-          }
+          let medalType = 'bronze'
+          let label = '3ème perso 🥉'
+
+          if (isKom) { medalType = 'kom'; label = 'KOM / QOM' }
+          else if (prRank === 1) { medalType = 'gold'; label = 'PR 🥇' }
+          else if (prRank === 2) { medalType = 'silver'; label = '2ème perso 🥈' }
+          else if (prRank === 3) { medalType = 'bronze'; label = '3ème perso 🥉' }
+          else continue
+
+          medals.push({
+            segmentId: effort.segment?.id,
+            segmentName: effort.segment?.name || 'Segment inconnu',
+            activityId: act.id,
+            activityName: act.name,
+            activityType: act.sport_type || act.type || 'Other',
+            date: effort.start_date || act.start_date,
+            year: new Date(act.start_date).getFullYear(),
+            medal: medalType,
+            label,
+            rank: prRank || null,
+            effortTime: effort.elapsed_time,
+            distance: effort.distance,
+            stravaUrl: `https://www.strava.com/activities/${act.id}`
+          })
         }
       } catch (e) {
         console.error(`Error fetching activity ${act.id}:`, e)
