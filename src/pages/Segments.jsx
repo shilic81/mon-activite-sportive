@@ -27,7 +27,6 @@ export default function Segments() {
   const [hasMore, setHasMore] = useState(false)
   const [nextBatch, setNextBatch] = useState(null)
   const [done, setDone] = useState(false)
-
   const [medalFilter, setMedalFilter] = useState('all')
   const [sportFilter, setSportFilter] = useState('all')
   const [yearFilter, setYearFilter] = useState('all')
@@ -102,8 +101,110 @@ export default function Segments() {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
-        {Object.entries(MEDAL_CONFIG).map(([key, { icon, label, color, bg }]) => (
-          <div key={key} className="card" style={{ padding: 20, textAlign: 'center', cursor: 'pointer', border: `1px solid ${medalFilter === key ? color : 'var(--border)'}`, transition: 'all 0.15s' }}
+        {Object.entries(MEDAL_CONFIG).map(([key, cfg]) => (
+          <div key={key} className="card" style={{ padding: 20, textAlign: 'center', cursor: 'pointer', border: `1px solid ${medalFilter === key ? cfg.color : 'var(--border)'}`, transition: 'all 0.15s' }}
             onClick={() => setMedalFilter(medalFilter === key ? 'all' : key)}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>{icon}</div>
-            <div
+            <div style={{ fontSize: 28, marginBottom: 8 }}>{cfg.icon}</div>
+            <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'Space Grotesk', color: cfg.color, marginBottom: 4 }}>{counts[key] || 0}</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)' }}>{cfg.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher un segment…"
+          style={{ flex: 1, minWidth: 200, padding: '10px 16px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 14, outline: 'none' }} />
+        <select value={yearFilter} onChange={e => setYearFilter(e.target.value)}
+          style={{ padding: '10px 14px', background: 'var(--bg2)', border: `1px solid ${yearFilter !== 'all' ? 'var(--blue)' : 'var(--border)'}`, borderRadius: 8, color: 'var(--text)', fontSize: 13, cursor: 'pointer', outline: 'none' }}>
+          <option value="all">📅 Toutes années</option>
+          {years.filter(y => y !== 'all').map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={sportFilter} onChange={e => setSportFilter(e.target.value)}
+          style={{ padding: '10px 14px', background: 'var(--bg2)', border: `1px solid ${sportFilter !== 'all' ? 'var(--orange)' : 'var(--border)'}`, borderRadius: 8, color: 'var(--text)', fontSize: 13, cursor: 'pointer', outline: 'none' }}>
+          <option value="all">🏅 Tous les sports</option>
+          {sports.filter(s => s !== 'all').map(s => {
+            const cfg = getSportConfig(s)
+            return <option key={s} value={s}>{cfg.icon} {cfg.label}</option>
+          })}
+        </select>
+        {(medalFilter !== 'all' || sportFilter !== 'all' || yearFilter !== 'all' || search) && (
+          <button onClick={() => { setMedalFilter('all'); setSportFilter('all'); setYearFilter('all'); setSearch('') }}
+            style={{ padding: '10px 14px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
+            ✕ Réinitialiser
+          </button>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: 60, textAlign: 'center', color: 'var(--text2)' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+            Récupération de tes segments médaillés…<br />
+            <span style={{ fontSize: 13, color: 'var(--text3)' }}>Cela peut prendre quelques secondes</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--text3)' }}>Aucun segment trouvé</div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 130px 100px 100px 110px', padding: '12px 20px', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>
+              <div>Médaille</div>
+              <div>Segment · Activité</div>
+              <div>Sport</div>
+              <div style={{ textAlign: 'right' }}>Temps</div>
+              <div style={{ textAlign: 'right' }}>Distance</div>
+              <div style={{ textAlign: 'right' }}>Date</div>
+            </div>
+            {filtered.map((m, i) => {
+              const medal = MEDAL_CONFIG[m.medal]
+              const sport = getSportConfig(m.activityType)
+              return (
+                <div key={`${m.segmentId}-${m.date}-${i}`}
+                  style={{ display: 'grid', gridTemplateColumns: '90px 1fr 130px 100px 100px 110px', alignItems: 'center', padding: '13px 20px', borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none', transition: 'background 0.1s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <div>
+                    <span style={{ padding: '3px 8px', borderRadius: 6, background: medal.bg, color: medal.color, fontSize: 12, fontWeight: 700 }}>
+                      {medal.icon} {m.label}
+                    </span>
+                  </div>
+                  <div style={{ paddingRight: 16 }}>
+                    <a href={m.stravaUrl} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+                      onMouseEnter={e => e.target.style.color = 'var(--orange)'}
+                      onMouseLeave={e => e.target.style.color = 'var(--text)'}>
+                      {m.segmentName}
+                    </a>
+                    <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                      {m.activityName?.length > 40 ? m.activityName.substring(0, 40) + '…' : m.activityName}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 16 }}>{sport.icon}</span>
+                    <span style={{ fontSize: 13, color: 'var(--text2)' }}>{sport.label}</span>
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: 'var(--green)' }}>
+                    {formatTime(m.effortTime)}
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 13, color: 'var(--text2)' }}>
+                    {m.distance ? `${(m.distance / 1000).toFixed(2)} km` : '—'}
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--text3)' }}>
+                    {format(parseISO(m.date), 'dd MMM yyyy', { locale: fr })}
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )}
+      </div>
+
+      {hasMore && !loading && (
+        <div style={{ textAlign: 'center', marginTop: 20 }}>
+          <button onClick={() => fetchBatch(nextBatch, true)} disabled={loadingMore} className="btn btn-ghost">
+            {loadingMore ? '⏳ Chargement…' : `↻ Charger ${progress.total - progress.processed} activités de plus`}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
